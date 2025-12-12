@@ -1,123 +1,76 @@
-exports.handler = async function(event, context) {
-  // Enable CORS
-  const headers = {
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Headers': 'Content-Type',
-    'Access-Control-Allow-Methods': 'POST, OPTIONS',
-    'Content-Type': 'application/json'
-  };
+export default async function handler(req, res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
-  // Handle preflight request
-  if (event.httpMethod === 'OPTIONS') {
-    return {
-      statusCode: 200,
-      headers,
-      body: ''
-    };
-  }
-
-  // Only allow POST
-  if (event.httpMethod !== 'POST') {
-    return {
-      statusCode: 405,
-      headers,
-      body: JSON.stringify({ error: 'Method not allowed' })
-    };
-  }
+  if (req.method === 'OPTIONS') return res.status(200).end();
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   try {
-    // Parse request body
-    const { text, language } = JSON.parse(event.body);
+    const { text, language } = req.body;
+    if (!text) return res.status(400).json({ error: 'Text is required' });
 
-    if (!text) {
-      return {
-        statusCode: 400,
-        headers,
-        body: JSON.stringify({ error: 'Text is required' })
-      };
-    }
-
-    // Get API key from environment variable
     const apiKey = process.env.GROQ_API_KEY;
-    
-    if (!apiKey) {
-      console.error('GROQ_API_KEY not found in environment variables');
-      return {
-        statusCode: 500,
-        headers,
-        body: JSON.stringify({ error: 'API key not configured' })
-      };
+    if (!apiKey) return res.status(500).json({ error: 'API key missing' });
+
+    const languageName = language === 'arabic' ? 'Arabic' : 'English';
+
+    const systemPrompt = `
+You are a professional ${languageName} grammar corrector.
+
+You MUST return ONLY a valid JSON object:
+{
+  "correctedText": "text",
+  "overallQuality": 1-10,
+  "errors": [
+    { 
+      "type": "grammar | spelling | punctuation",
+      "original": "text",
+      "correction": "text",
+      "explanation": "why it was wrong"
     }
+  ],
+  "suggestions": ["advice 1", "advice 2"]
+}
 
-    const languageName = language === 'english' ? 'English' : 'Arabic';
+RULES:
+- NO markdown
+- NO code blocks
+- NO natural language outside JSON
+- NO comments
+- Only the JSON object.
+`;
 
-    // Call Groq API
-    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
+    const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST",
       headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json'
+        "Authorization": `Bearer ${apiKey}`,
+        "Content-Type": "application/json"
       },
       body: JSON.stringify({
-        model: 'llama-3.3-70b-versatile', // Fast and accurate model
+        model: "llama-3.3-70b-versatile",
         messages: [
-          {
-            role: 'system',
-            content: `You are an expert ${languageName} grammar checker and language improver. Analyze text and respond ONLY with valid JSON (no markdown, no preamble) in this exact format:
-{
-  "correctedText": "the fully corrected version",
-  "errors": [{"type": "error type", "original": "wrong text", "correction": "fixed text", "explanation": "why it was wrong"}],
-  "overallQuality": 8,
-  "suggestions": ["suggestion 1", "suggestion 2"]
-}`
-          },
-          {
-            role: 'user',
-            content: `Check this ${languageName} text:\n\n${text}`
-          }
+          { role: "system", content: systemPrompt },
+          { role: "user", content: text }
         ],
-        temperature: 0.3,
-        max_tokens: 2000
+        temperature: 0.2,
+        max_tokens: 1200
       })
     });
 
-    if (!response.ok) {
-      const errorData = await response.text();
-      console.error('Groq API Error:', errorData);
-      return {
-        statusCode: response.status,
-        headers,
-        body: JSON.stringify({ 
-          error: 'Failed to check grammar',
-          details: errorData 
-        })
-      };
-    }
-
     const data = await response.json();
-    
-    // Extract the AI's response
-    const aiResponse = data.choices[0].message.content;
-    
-    // Clean and parse JSON (remove markdown if present)
-    const cleanJson = aiResponse.replace(/```json\n?|```\n?/g, '').trim();
-    const result = JSON.parse(cleanJson);
 
-    return {
-      statusCode: 200,
-      headers,
-      body: JSON.stringify(result)
-    };
+    let content = data.choices[0].message.content;
 
-  } catch (error) {
-    console.error('Function error:', error);
-    return {
-      statusCode: 500,
-      headers,
-      body: JSON.stringify({ 
-        error: 'Internal server error',
-        message: error.message 
-      })
-    };
+    // remove markdown if the model adds it
+    content = content.replace(/```json|```/g, '').trim();
+
+    const parsed = JSON.parse(content);
+
+    return res.status(200).json(parsed);
+
+  } catch (err) {
+    console.error("API error:", err);
+    return res.status(500).json({ error: err.message });
   }
-};
+}
