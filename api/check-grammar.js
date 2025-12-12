@@ -25,66 +25,66 @@ module.exports = async function (req, res) {
     const languageName = language === "arabic" ? "Arabic" : "English";
 
     const systemPrompt = `
-You are a professional ${languageName} grammar corrector.
+You are an advanced ${languageName} grammar corrector and language improver.
 
-Return ONLY valid JSON in this format:
+Analyze the user's text and return ONLY valid JSON in this format:
 
 {
-  "correctedText": "text",
+  "correctedText": "the fully corrected and improved version of the user's full text",
   "overallQuality": 1-10,
   "errors": [
     {
-      "type": "grammar | spelling | punctuation",
-      "original": "text",
-      "correction": "text",
-      "explanation": "why it was wrong"
+      "type": "grammar | spelling | punctuation | style",
+      "original": "incorrect part",
+      "correction": "correct version",
+      "explanation": "why this change was needed"
     }
   ],
-  "suggestions": ["advice 1", "advice 2"]
+  "suggestions": [
+    "suggestion 1",
+    "suggestion 2"
+  ]
 }
 
-RULES:
-- NO markdown
-- NO backticks
-- NO explanation outside JSON
-- ONLY return the JSON object
+Rules:
+- DO NOT output markdown.
+- DO NOT output backticks.
+- DO NOT output anything outside the JSON.
+- "correctedText" must be the FULL corrected sentence, not only word corrections.
+- Always include suggestions and a quality score.
 `;
 
-    const response = await fetch(
-      "https://api.groq.com/openai/v1/chat/completions",
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: "llama-3.3-70b-versatile",
-          messages: [
-            { role: "system", content: systemPrompt },
-            { role: "user", content: text },
-          ],
-          temperature: 0.3,
-          max_tokens: 1500,
-        }),
-      }
-    );
+    const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model: "llama-3.3-70b-versatile",
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: text }
+        ],
+        temperature: 0.3,
+        max_tokens: 2000
+      })
+    });
 
     const data = await response.json();
 
     let content = data.choices[0].message.content;
-
-    // Clean JSON if wrapped in code fences
     content = content.replace(/```json|```/g, "").trim();
 
     const parsed = JSON.parse(content);
 
     return res.status(200).json(parsed);
+
   } catch (err) {
     console.error("Server error:", err);
     return res.status(500).json({
       error: "Internal server error",
-      message: err.message,
+      message: err.message
     });
   }
 };
