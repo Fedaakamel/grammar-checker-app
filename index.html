@@ -32,7 +32,7 @@
 
                 try {
                     // Call YOUR Netlify function instead of API directly
-                    const response = await fetch('/.netlify/functions/check-grammar', {
+                    const response = await fetch('/api/check-grammar', {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',
@@ -221,3 +221,4 @@
     </script>
 </body>
 </html>
+
